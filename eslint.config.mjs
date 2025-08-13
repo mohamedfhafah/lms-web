@@ -10,7 +10,19 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // Ignore generated outputs
+  {
+    ignores: ["src/generated/**"],
+  },
+  // Base Next.js configs
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  // Allow require() in JS (generated prisma wasm.js)
+  {
+    files: ["**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ];
 
 export default eslintConfig;

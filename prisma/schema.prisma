@@ -1,15 +1,144 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema for Library Management System
+// Follows project rules: descriptive relations, explicit join models, Postgres
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADHERENT
+  LIBRARIAN
+}
+
+enum ReservationStatus {
+  PENDING
+  NOTIFIED
+  EXPIRED
+  CANCELLED
+  FULFILLED
+}
+
+model Oeuvre {
+  /// Catalog identifier (call number)
+  cote           String       @id
+  titre          String
+  dateParution   DateTime?    @db.Date
+
+  // Relations
+  livres         Livre[]
+  auteurs        OeuvreAuteur[]
+  motsClefs      OeuvreMotCle[]
+  reservations   Reservation[]
+}
+
+model Auteur {
+  id       String          @id @default(cuid())
+  nom      String
+
+  // Relations
+  oeuvres  OeuvreAuteur[]
+}
+
+model MotCle {
+  id       String          @id @default(cuid())
+  libelle  String          @unique
+
+  // Relations
+  oeuvres  OeuvreMotCle[]
+}
+
+model Livre {
+  id                String    @id @default(cuid())
+  numeroExemplaire  Int
+  dateAchat         DateTime  @db.Date
+  disponible        Boolean   @default(true)
+
+  // FK to Oeuvre
+  oeuvreCote String
+  oeuvre     Oeuvre    @relation(fields: [oeuvreCote], references: [cote], onDelete: Cascade)
+
+  // Relations
+  prets      Pret[]
+
+  @@unique([oeuvreCote, numeroExemplaire])
+  @@index([oeuvreCote])
+}
+
+model Adherent {
+  /// Internal numeric id (adherent number)
+  id                 Int        @id @default(autoincrement())
+  nom                String
+  adresse            String
+  dateAdhesion       DateTime   @db.Date
+  derniereCotisation DateTime?  @db.Date
+
+  /// Clerk user id for auth sync
+  clerkUserId String @unique
+  role        Role   @default(ADHERENT)
+
+  // Relations
+  prets        Pret[]
+  reservations Reservation[]
+}
+
+model Pret {
+  id                  String     @id @default(cuid())
+  adherentId          Int
+  livreId             String
+
+  dateEmprunt         DateTime   @default(now())
+  /// Calculated by app: dateEmprunt + 1 month
+  dateEcheance        DateTime
+  dateRetourEffective DateTime?
+  renouvellements     Int        @default(0)
+
+  adherent Adherent @relation(fields: [adherentId], references: [id])
+  livre    Livre    @relation(fields: [livreId], references: [id])
+
+  @@index([adherentId])
+  @@index([livreId])
+}
+
+model Reservation {
+  id             String             @id @default(cuid())
+  adherentId     Int
+  oeuvreCote     String
+  status         ReservationStatus  @default(PENDING)
+  createdAt      DateTime           @default(now())
+  notifiedAt     DateTime?
+  expiresAt      DateTime?
+
+  adherent Adherent @relation(fields: [adherentId], references: [id])
+  oeuvre   Oeuvre   @relation(fields: [oeuvreCote], references: [cote])
+
+  @@index([oeuvreCote, createdAt])
+}
+
+/// Explicit M:N between Oeuvre and Auteur
+model OeuvreAuteur {
+  oeuvreCote String
+  auteurId   String
+
+  oeuvre Oeuvre @relation(fields: [oeuvreCote], references: [cote], onDelete: Cascade)
+  auteur Auteur @relation(fields: [auteurId], references: [id], onDelete: Cascade)
+
+  @@id([oeuvreCote, auteurId])
+  @@index([auteurId])
+}
+
+/// Explicit M:N between Oeuvre and MotCle
+model OeuvreMotCle {
+  oeuvreCote String
+  motCleId   String
+
+  oeuvre Oeuvre @relation(fields: [oeuvreCote], references: [cote], onDelete: Cascade)
+  motCle MotCle @relation(fields: [motCleId], references: [id], onDelete: Cascade)
+
+  @@id([oeuvreCote, motCleId])
+  @@index([motCleId])
 }
