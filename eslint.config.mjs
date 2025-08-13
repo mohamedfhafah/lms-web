@@ -12,7 +12,12 @@ const compat = new FlatCompat({
 const eslintConfig = [
   // Ignore generated outputs
   {
-    ignores: ["src/generated/**"],
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "src/generated/**",
+      "coverage/**",
+    ],
   },
   // Base Next.js configs
   ...compat.extends("next/core-web-vitals", "next/typescript"),
