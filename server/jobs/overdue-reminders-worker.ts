@@ -14,7 +14,9 @@ if (redis && enableBullWorker) {
       "overdue-reminders",
       async () => {
         const res = await sendOverdueReminders();
-        console.log(`Overdue reminders processed: ${res.count} loans.`);
+        console.log(
+          `Overdue reminders processed: count=${res.count} emailed=${res.emailed} skipped=${res.skipped} errors=${res.errors}`
+        );
         return res;
       },
       { connection: redis }

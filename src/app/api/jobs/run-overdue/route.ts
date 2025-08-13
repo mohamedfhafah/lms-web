@@ -41,7 +41,7 @@ async function runOverdue() {
   return NextResponse.json({
     message: "Overdue reminders executed directly",
     mode: "direct",
-    count: result.count,
+    ...result,
   });
 }
 
