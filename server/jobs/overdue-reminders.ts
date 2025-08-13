@@ -1,5 +1,6 @@
 import { prisma } from "server/db";
 import { clerkClient as _clerkClient } from "@clerk/nextjs/server";
+import { renderOverdueReminderEmail } from "server/emails/OverdueReminderEmail";
 
 export type OverdueReminderResult = {
   count: number;
@@ -68,7 +69,9 @@ export async function sendOverdueReminders(): Promise<OverdueReminderResult> {
         `Merci de retourner l'ouvrage ou contacter la bibliothèque.\n\n` +
         `— Bibliothèque`;
 
-      await resend.emails.send({ from: fromAddr, to: email, subject, text });
+      const html = renderOverdueReminderEmail({ name: p.adherent.nom, days, pretId: p.id });
+
+      await resend.emails.send({ from: fromAddr, to: email, subject, text, html });
       emailed++;
     } catch (err) {
       errors++;
