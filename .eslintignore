@@ -1,9 +1,0 @@
-# Ignore build and cache
-.next/
-node_modules/
-
-# Ignore generated Prisma client output
-src/generated/
-
-# Optional: coverage or other artifacts
-coverage/
