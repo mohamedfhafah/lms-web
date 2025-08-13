@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { publicProcedure, router } from "../trpc";
 import { prisma } from "../db";
+import { Prisma } from "@prisma/client";
 
 // NOTE: Uses Postgres FTS via raw SQL for search performance.
 // Consider adding pg_trgm for fuzzy later and GIN indexes on a materialized tsvector.
@@ -9,6 +10,8 @@ const searchInput = z.object({
   q: z.string().min(1, "query required"),
   page: z.number().int().min(1).default(1),
   pageSize: z.number().int().min(1).max(50).default(10),
+  authors: z.array(z.string()).optional().default([]),
+  keywords: z.array(z.string()).optional().default([]),
 });
 
 const searchItem = z.object({
@@ -23,8 +26,30 @@ const searchItem = z.object({
 
 export const catalogueRouter = router({
   search: publicProcedure.input(searchInput).query(async ({ input }) => {
-    const { q, page, pageSize } = input;
+    const { q, page, pageSize, authors, keywords } = input;
     const offset = (page - 1) * pageSize;
+    const authorPatterns = (authors ?? []).map((a) => `%${a}%`);
+    const keywordPatterns = (keywords ?? []).map((m) => `%${m}%`);
+
+    const authorClause =
+      authorPatterns.length === 0
+        ? Prisma.sql`TRUE`
+        : Prisma.sql`(${Prisma.join(
+            authorPatterns.map((p) =>
+              Prisma.sql`array_to_string(COALESCE(o.authors, ARRAY[]::text[]), ' ') ILIKE ${p}`
+            ),
+            ' OR '
+          )})`;
+
+    const keywordClause =
+      keywordPatterns.length === 0
+        ? Prisma.sql`TRUE`
+        : Prisma.sql`(${Prisma.join(
+            keywordPatterns.map((p) =>
+              Prisma.sql`array_to_string(COALESCE(o.mots, ARRAY[]::text[]), ' ') ILIKE ${p}`
+            ),
+            ' OR '
+          )})`;
 
     // Items query
     const items = (await prisma.$queryRaw<any>`
@@ -52,17 +77,25 @@ export const catalogueRouter = router({
              o.mots,
              o.total_copies AS "totalCopies",
              o.available_copies AS "availableCopies",
-             ts_rank_cd(
+             GREATEST(
+               ts_rank_cd(
                to_tsvector('simple', COALESCE(o."titre", '') || ' ' ||
                  array_to_string(COALESCE(o.authors, ARRAY[]::text[]), ' ') || ' ' ||
                  array_to_string(COALESCE(o.mots, ARRAY[]::text[]), ' ')
                ), q.query
+               ),
+               similarity(o."titre", ${q})
              ) AS rank
         FROM oeuvres o, q
-       WHERE to_tsvector('simple', COALESCE(o."titre", '') || ' ' ||
+      WHERE (
+              to_tsvector('simple', COALESCE(o."titre", '') || ' ' ||
                array_to_string(COALESCE(o.authors, ARRAY[]::text[]), ' ') || ' ' ||
                array_to_string(COALESCE(o.mots, ARRAY[]::text[]), ' ')
              ) @@ q.query
+            OR similarity(o."titre", ${q}) > 0.2
+          )
+        AND ${authorClause}
+        AND ${keywordClause}
        ORDER BY rank DESC, o."titre" ASC
        LIMIT ${pageSize} OFFSET ${offset}
     `) as unknown[];
@@ -89,10 +122,15 @@ export const catalogueRouter = router({
       )
       SELECT COUNT(*)::int AS count
         FROM oeuvres o, q
-       WHERE to_tsvector('simple', COALESCE(o."titre", '') || ' ' ||
-               array_to_string(COALESCE(o.authors, ARRAY[]::text[]), ' ') || ' ' ||
-               array_to_string(COALESCE(o.mots, ARRAY[]::text[]), ' ')
-             ) @@ q.query
+       WHERE (
+              to_tsvector('simple', COALESCE(o."titre", '') || ' ' ||
+                array_to_string(COALESCE(o.authors, ARRAY[]::text[]), ' ') || ' ' ||
+                array_to_string(COALESCE(o.mots, ARRAY[]::text[]), ' ')
+              ) @@ q.query
+              OR similarity(o."titre", ${q}) > 0.2
+            )
+         AND (${authorClause})
+         AND (${keywordClause})
     `) as Array<{ count: number }>;
 
     const total = totalRows?.[0]?.count ?? 0;
